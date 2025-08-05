@@ -1,216 +1,264 @@
 /**
- * Galactic Diplomacy - v3.1 Canónica
- * Código unificado, corregido y refactorizado.
+ * Project Terra Nova - v2.0 dApp Edition
+ * Arquitectura de Juego con economía PAZcoin y módulo TON Connect.
  */
-class GameEngine {
+
+// --- CONFIGURACIÓN CENTRAL DEL JUEGO ---
+const gameConfig = {
+    localStorageKey: 'projectTerraNova_v2_pazcoin',
+    currencyName: 'PAZcoin',
+    currencySymbol: '$XPAZ',
+    upgrades: {
+        'education': { name: 'Educación Universal', baseCost: 50, basePph: 0.5, icon: '🎓' },
+        'cleanEnergy': { name: 'Energía Limpia', baseCost: 300, basePph: 2, icon: '💡' },
+        'healthcare': { name: 'Investigación Médica', baseCost: 1500, basePph: 10, icon: '❤️‍🩹' },
+        'culture': { name: 'Arte y Cultura', baseCost: 8000, basePph: 50, icon: '🎭' },
+        'justice': { name: 'Justicia Global', baseCost: 45000, basePph: 250, icon: '⚖️' },
+        'space': { name: 'Exploración Espacial', baseCost: 250000, basePph: 1500, icon: '🚀' }
+    },
+    navItems: [
+        { id: 'tapper', name: 'Principal', icon: '🌍' },
+        { id: 'upgrades', name: 'Proyectos', icon: '🏗️' }
+    ]
+};
+
+// --- CLASE PRINCIPAL DEL JUEGO ---
+class Game {
     constructor(config) {
         this.config = config;
         this.state = this.getInitialState();
-        this.tonConnectUI = null;
+        this.tonConnectUI = null; // Se inicializará después
         this.dom = {
             root: document.getElementById('game-container'),
             loadingScreen: document.getElementById('loading-screen'),
         };
+        this.ui = {};
         this.init();
     }
 
-    // --- 1. INICIALIZACIÓN Y CICLO DE VIDA ---
+    // --- 1. INICIALIZACIÓN ---
     init() {
         this.initializeTonConnect();
-        this.loadGame();
-        this.bindEventListeners();
+        this.loadState();
+        this.bindEvents();
         setTimeout(() => {
-            this.dom.loadingScreen.classList.add('hidden');
+            this.dom.loadingScreen.style.display = 'none';
             this.render();
-            setInterval(() => this.passiveIncomeTick(), 1000);
-            setInterval(() => this.saveGame(), 15000);
-        }, 1500);
+            this.startTimers();
+        }, 500);
     }
 
     initializeTonConnect() {
-        const manifestUrl = 'https://mang369.github.io/peace-kombat/tonconnect-manifest.json';
-        this.tonConnectUI = new TonConnectUI({ manifestUrl });
-        this.tonConnectUI.onStatusChange(wallet => {
-            this.state.wallet.connected = !!wallet;
-            this.state.wallet.address = wallet ? TonConnectSDK.toUserFriendlyAddress(wallet.account.address) : null;
-            this.renderHeader();
+        this.tonConnectUI = new TonConnectUI({
+            manifestUrl: 'https://mang369.github.io/peace-kombat/tonconnect-manifest.json',
         });
     }
 
     getInitialState() {
         return {
-            totalInfluence: 0,
-            influencePerHour: 0,
-            influencePerTap: 1,
-            totalTaps: 0,
-            totalInfluenceGenerated: 0,
-            startDate: new Date().toISOString(),
-            lastSaved: new Date().toISOString(),
+            pazcoin: 0,
+            coinsPerTap: 1,
+            coinsPerHour: 0,
             upgrades: {},
-            wallet: { connected: false, address: null },
-            activeView: 'tapper'
+            activeView: 'tapper',
         };
     }
 
-    bindEventListeners() {
-        this.dom.root.addEventListener('click', this.handleGlobalClick.bind(this));
-        window.addEventListener('beforeunload', () => this.saveGame());
+    startTimers() {
+        setInterval(() => this.passiveTick(), 1000);
+        setInterval(() => this.saveState(), 10000);
     }
 
-    // --- 2. MANEJO DE EVENTOS ---
-    handleGlobalClick(event) {
-        const actionTarget = event.target.closest('[data-action]');
-        if (!actionTarget) return;
-        const { action, payload } = actionTarget.dataset;
+    // --- 2. MANEJO DE ESTADO Y PERSISTENCIA ---
+    saveState() {
+        try {
+            const stateToSave = { ...this.state, lastSaved: Date.now() };
+            localStorage.setItem(this.config.localStorageKey, JSON.stringify(stateToSave));
+        } catch (error) {
+            console.error("Error al guardar el estado:", error);
+        }
+    }
 
-        switch (action) {
-            case 'handle-tap':
-                this.handleTap();
-                break;
-            case 'purchase-upgrade':
-                this.purchaseUpgrade(payload);
-                this.renderMainContent();
-                break;
-            case 'switch-view':
-                this.switchView(payload);
-                break;
+    loadState() {
+        try {
+            const savedData = localStorage.getItem(this.config.localStorageKey);
+            if (!savedData) return;
+            const loadedState = JSON.parse(savedData);
+            
+            this.state = { ...this.getInitialState(), ...loadedState };
+
+            const lastSaved = loadedState.lastSaved || Date.now();
+            const offlineSeconds = (Date.now() - lastSaved) / 1000;
+            const offlineEarnings = (this.state.coinsPerHour / 3600) * offlineSeconds;
+            this.state.pazcoin += offlineEarnings;
+
+        } catch (error) {
+            console.error("Error al cargar el estado, empezando de nuevo.", error);
+            localStorage.removeItem(this.config.localStorageKey);
         }
     }
 
     // --- 3. LÓGICA DEL JUEGO ---
-    handleTap() {
-        this.state.totalInfluence += this.state.influencePerTap;
-        this.state.totalTaps++;
-        this.state.totalInfluenceGenerated += this.state.influencePerTap;
-        this.showFloatingNumber(this.state.influencePerTap);
-        const influenceDisplay = document.getElementById('total-influence-value');
-        if (influenceDisplay) influenceDisplay.textContent = this.formatNumber(this.state.totalInfluence);
+    tap() {
+        this.state.pazcoin += this.state.coinsPerTap;
+        this.showFloatingNumber(`+${this.state.coinsPerTap}`);
+        this.update();
     }
 
-    passiveIncomeTick() {
-        if (this.state.influencePerHour > 0) {
-            const influenceFromPassive = this.state.influencePerHour / 3600;
-            this.state.totalInfluence += influenceFromPassive;
-            this.state.totalInfluenceGenerated += influenceFromPassive;
-            const influenceDisplay = document.getElementById('total-influence-value');
-            if (influenceDisplay) influenceDisplay.textContent = this.formatNumber(this.state.totalInfluence);
+    passiveTick() {
+        if (this.state.coinsPerHour > 0) {
+            this.state.pazcoin += this.state.coinsPerHour / 3600;
+            this.update();
         }
     }
 
     purchaseUpgrade(id) {
-        if (!id) return;
         const upgradeInfo = this.config.upgrades[id];
-        const level = this.state.upgrades[id] || 0;
-        
-        // === ¡ERROR CORREGIDO AQUÍ! ===
-        // Usamos `upgradeInfo.baseCost` en lugar de `baseInfluence` para el cálculo.
-        const cost = this.calculateCost(upgradeInfo.baseCost, level);
+        const currentLevel = this.state.upgrades[id] || 0;
+        const cost = this.calculateCost(upgradeInfo.baseCost, currentLevel);
 
-        if (this.state.totalInfluence >= cost) {
-            this.state.totalInfluence -= cost;
-            this.state.upgrades[id] = level + 1;
-            this.recalculateInfluencePerHour();
+        if (this.state.pazcoin >= cost) {
+            this.state.pazcoin -= cost;
+            this.state.upgrades[id] = currentLevel + 1;
+            this.recalculateCoinsPerHour();
+            this.render();
         }
     }
 
-    switchView(view) {
-        if (view && this.state.activeView !== view) {
-            this.state.activeView = view;
-            this.renderMainContent();
-            this.renderNav();
-        }
+    // --- 4. CÁLCULOS ---
+    calculateCost(baseCost, level) {
+        return Math.floor(baseCost * Math.pow(1.20, level));
     }
 
-    // --- 4. RENDERIZADO ---
+    recalculateCoinsPerHour() {
+        let pph = 0;
+        for (const id in this.state.upgrades) {
+            const level = this.state.upgrades[id];
+            const upgradeInfo = this.config.upgrades[id];
+            pph += level * upgradeInfo.basePph;
+        }
+        this.state.coinsPerHour = pph;
+    }
+
+    formatNumber(num) {
+        if (num < 1000) return num.toFixed(0);
+        const suffixes = ['', 'K', 'M', 'B', 'T'];
+        const i = Math.floor(Math.log10(num) / 3);
+        const shortNum = (num / Math.pow(1000, i)).toFixed(2);
+        return shortNum.replace(/\.00$/, '').replace(/\.0$/, '') + suffixes[i];
+    }
+    
+    // --- 5. RENDERIZADO Y MANEJO DEL DOM ---
     render() {
-        this.dom.root.innerHTML = `<div id="header-container"></div><div class="main-content" id="main-content-container"></div><nav class="game-nav" id="nav-container"></nav>`;
-        this.renderHeader();
-        this.renderMainContent();
-        this.renderNav();
-    }
-
-    renderHeader() {
-        const container = document.getElementById('header-container');
-        if (!container) return;
-        const { wallet } = this.state;
-        const addr = wallet.address;
-        const walletAddressText = wallet.connected ? `${addr.substring(0, 4)}...${addr.substring(addr.length - 4)}` : 'Desconectado';
-        container.innerHTML = `
+        this.dom.root.innerHTML = `
             <header class="game-header">
-                <div class="player-info"> <span class="header-icon">🧑‍🚀</span> <div class="player-details"> <span>Diplomático Galáctico</span> <span class="wallet-info ${wallet.connected ? 'connected' : ''}">${walletAddressText}</span> </div> </div>
-                <div id="ton-connect-wallet-btn"></div>
-            </header>`;
-        this.tonConnectUI.setTargetElement(document.getElementById('ton-connect-wallet-btn'));
+                <div class="player-info">
+                    <h1>Project Terra Nova</h1>
+                    <p>Construyendo un futuro unificado.</p>
+                </div>
+                <div id="ton-connect-button"></div>
+            </header>
+            <main class="main-content" id="main-content"></main>
+            <nav class="game-nav" id="game-nav"></nav>
+        `;
+        this.tonConnectUI.setTargetElement(document.getElementById('ton-connect-button'));
+        this.renderNav();
+        this.renderCurrentView();
     }
-
-    renderMainContent() {
-        const container = document.getElementById('main-content-container');
-        if (!container) return;
-        switch (this.state.activeView) {
-            case 'upgrades': container.innerHTML = this.getUpgradesViewHTML(); break;
-            case 'stats': container.innerHTML = this.getStatsViewHTML(); break;
-            default: container.innerHTML = this.getTapperViewHTML(); break;
-        }
+    
+    update() {
+        if (this.ui.pazcoinDisplay) this.ui.pazcoinDisplay.textContent = this.formatNumber(this.state.pazcoin);
+        if (this.ui.coinsPerHourDisplay) this.ui.coinsPerHourDisplay.textContent = `${this.formatNumber(this.state.coinsPerHour)} / hora`;
     }
 
     renderNav() {
-        const container = document.getElementById('nav-container');
-        if (!container) return;
-        container.innerHTML = this.config.navItems.map(item => `<button class="nav-button ${this.state.activeView === item.id ? 'active' : ''}" data-action="switch-view" data-payload="${item.id}"><span class="icon">${item.icon}</span> <span>${item.name}</span></button>`).join('');
+        const navContainer = document.getElementById('game-nav');
+        navContainer.innerHTML = this.config.navItems.map(item => `
+            <button class="nav-button ${this.state.activeView === item.id ? 'active' : ''}" data-view="${item.id}">
+                <div class="icon">${item.icon}</div>
+                <span>${item.name}</span>
+            </button>
+        `).join('');
     }
 
-    getTapperViewHTML = () => `<main class="tapper-section"><div class="passive-income-display"><span class="label">Influencia / Hora</span><div class="value"><span class="icon">✨</span><span>${this.formatNumber(this.state.influencePerHour)}</span></div></div><div class="total-influence-display"><span id="total-influence-value">${this.formatNumber(this.state.totalInfluence)}</span></div><div id="tapper-zone" data-action="handle-tap"><div id="galaxy-container"><span id="galaxy-icon">💫</span></div></div></main>`;
-    getUpgradesViewHTML() { const cardsHTML = Object.keys(this.config.upgrades).map(id => { const up = this.config.upgrades[id], lvl = this.state.upgrades[id] || 0, cost = this.calculateCost(up.baseCost, lvl); return `<div class="upgrade-card ${this.state.totalInfluence >= cost ? 'can-afford' : ''}" data-action="purchase-upgrade" data-payload="${id}"><span class="upgrade-icon">${up.icon}</span><div class="upgrade-info"><h4>${up.name}</h4><p>+${up.baseInfluence} Influencia/Hora</p></div><div class="upgrade-details"><span class="upgrade-level">Nivel ${lvl}</span><div class="upgrade-cost"><span class="icon">💠</span><span>${this.formatNumber(cost)}</span></div></div></div>`; }).join(''); return `<section class="game-view"><h2>🛰️ Proyectos Galácticos 🛰️</h2><div id="upgrades-list">${cardsHTML}</div></section>`; }
-    getStatsViewHTML() { const days = Math.max(1, Math.floor((new Date() - new Date(this.state.startDate)) / 864e5)); const stats = [{ i: '👆', t: 'Interacciones Totales', v: this.formatNumber(this.state.totalTaps) }, { i: '✨', t: 'Influencia Generada', v: this.formatNumber(this.state.totalInfluenceGenerated) }, { i: '🗓️', t: 'Ciclos Galácticos', v: days }]; return `<section class="game-view"><h2>📈 Registros de la Flota 📈</h2><div class="stats-container">${stats.map(s => `<div class="stat-card"><h3><span class="icon">${s.i}</span> ${s.t}</h3><p>${s.v}</p></div>`).join('')}</div></section>`; }
-
-    // --- 5. UTILIDADES Y CÁLCULOS ---
-    calculateCost = (baseCost, level) => Math.floor(baseCost * Math.pow(1.18, level));
-    recalculateInfluencePerHour() { this.state.influencePerHour = Object.keys(this.state.upgrades).reduce((t, id) => t + ((this.state.upgrades[id] || 0) * this.config.upgrades[id].baseInfluence), 0); }
-    formatNumber(n = 0) { if (n < 1e3) return n.toFixed(0); const s = ["", "K", "M", "B", "T"], i = Math.floor(Math.log10(n) / 3); return `${(n / 1e3 ** i).toFixed(2).replace(/\.00$|\.0$/, "")}${s[i]}`; }
-    showFloatingNumber(v) { const t = document.getElementById("tapper-zone"); if (!t) return; const e = document.createElement("div"); e.className = "floating-number"; e.textContent = `+${this.formatNumber(v)}`; t.appendChild(e); setTimeout(() => e.remove(), 1500); }
-
-    // --- 6. PERSISTENCIA DE DATOS ---
-    saveGame() {
-        this.state.lastSaved = new Date().toISOString();
-        try { localStorage.setItem('galacticDiplomacySave_v1', JSON.stringify(this.state)); } catch (e) { console.error("Error al guardar la partida:", e); }
-    }
-    loadGame() {
-        try {
-            const savedData = localStorage.getItem('galacticDiplomacySave_v1');
-            if (!savedData) return;
-            const loadedState = JSON.parse(savedData);
-            const lastSaved = loadedState.lastSaved || loadedState.startDate;
-            const offlineSeconds = Math.max(0, (new Date().getTime() - new Date(lastSaved).getTime()) / 1000);
-            const offlineInfluence = ((loadedState.influencePerHour || 0) / 3600) * offlineSeconds;
-            
-            loadedState.totalInfluence = (loadedState.totalInfluence || 0) + offlineInfluence;
-            loadedState.totalInfluenceGenerated = (loadedState.totalInfluenceGenerated || 0) + offlineInfluence;
-            
-            this.state = { ...this.getInitialState(), ...loadedState };
-        } catch (e) {
-            console.error("Error al cargar partida guardada. Empezando de nuevo.", e);
-            localStorage.removeItem('galacticDiplomacySave_v1');
+    renderCurrentView() {
+        const contentContainer = document.getElementById('main-content');
+        if (this.state.activeView === 'upgrades') {
+            contentContainer.innerHTML = this.getUpgradesViewHTML();
+        } else {
+            contentContainer.innerHTML = this.getTapperViewHTML();
         }
-        this.recalculateInfluencePerHour();
+        this.cacheUIElements();
+        this.update();
+    }
+
+    getTapperViewHTML() {
+        return `
+            <div class="tapper-view">
+                <div class="resource-display">
+                    <h2 id="pazcoin-display">${this.formatNumber(this.state.pazcoin)}</h2>
+                    <p>${this.config.currencyName} (${this.config.currencySymbol})</p>
+                    <p id="coins-per-hour-display">${this.formatNumber(this.state.coinsPerHour)} / hora</p>
+                </div>
+                <div class="tapper-zone" data-action="tap">
+                    <div class="tapper-visual"><span class="tapper-icon">🌍</span></div>
+                </div>
+            </div>`;
+    }
+
+    getUpgradesViewHTML() {
+        const upgradesHTML = Object.entries(this.config.upgrades).map(([id, upgrade]) => {
+            const level = this.state.upgrades[id] || 0;
+            const cost = this.calculateCost(upgrade.baseCost, level);
+            const canAfford = this.state.pazcoin >= cost;
+            return `
+                <div class="upgrade-card ${canAfford ? 'can-afford' : ''}" data-action="purchase-upgrade" data-id="${id}">
+                    <div class="upgrade-icon">${upgrade.icon}</div>
+                    <div class="upgrade-info">
+                        <h4>${upgrade.name}</h4>
+                        <p>+${upgrade.basePph} ${this.config.currencySymbol}/Hora</p>
+                    </div>
+                    <div class="upgrade-cost">
+                        <div class="price">${this.formatNumber(cost)} ${this.config.currencySymbol}</div>
+                        <div class="level">Nivel ${level}</div>
+                    </div>
+                </div>`;
+        }).join('');
+        return `<div class="game-view"><h3>Proyectos Globales</h3><div class="upgrades-list">${upgradesHTML}</div></div>`;
+    }
+
+    showFloatingNumber(text) {
+        const tapperZone = this.dom.root.querySelector('.tapper-zone');
+        if (!tapperZone) return;
+        const numberEl = document.createElement('div');
+        numberEl.className = 'floating-number';
+        numberEl.textContent = text;
+        tapperZone.appendChild(numberEl);
+        numberEl.addEventListener('animationend', () => numberEl.remove());
+    }
+
+    // --- 6. EVENTOS ---
+    bindEvents() {
+        this.dom.root.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-action], [data-view]');
+            if (!target) return;
+            
+            if (target.dataset.action === 'tap') this.tap();
+            if (target.dataset.action === 'purchase-upgrade') this.purchaseUpgrade(target.dataset.id);
+            if (target.dataset.view) {
+                this.state.activeView = target.dataset.view;
+                this.render();
+            }
+        });
+    }
+
+    cacheUIElements() {
+        this.ui.pazcoinDisplay = document.getElementById('pazcoin-display');
+        this.ui.coinsPerHourDisplay = document.getElementById('coins-per-hour-display');
     }
 }
 
-// --- CONFIGURACIÓN CENTRALIZADA DEL JUEGO ---
-const gameConfig = {
-    upgrades: {
-        'treaties': { name: 'Tratados Interstelares', baseInfluence: 1, baseCost: 50, icon: '📜' },
-        'xenolinguistics': { name: 'Academias de Idiomas', baseInfluence: 5, baseCost: 250, icon: '👽' },
-        'networks': { name: 'Red de Hiper-relés', baseInfluence: 20, baseCost: 1000, icon: '🛰️' },
-        'biotech': { name: 'Clínicas de Bio-Regeneración', baseInfluence: 80, baseCost: 5000, icon: '🧬' },
-        'robotics': { name: 'Enviados Robóticos', baseInfluence: 300, baseCost: 20000, icon: '🤖' },
-        'artifacts': { name: 'Estudio de Artefactos', baseInfluence: 1200, baseCost: 100000, icon: '🛸' }
-    },
-    navItems: [
-        { id: 'tapper', name: 'Galaxia', icon: '🌌' },
-        { id: 'upgrades', name: 'Proyectos', icon: '🚀' },
-        { id: 'stats', name: 'Registros', icon: '📊' }
-    ]
-};
-
 // --- PUNTO DE ENTRADA DE LA APLICACIÓN ---
-document.addEventListener('DOMContentLoaded', () => new GameEngine(gameConfig));
+document.addEventListener('DOMContentLoaded', () => {
+    new Game(gameConfig);
+});

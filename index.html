@@ -3,20 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Galactic Diplomacy</title>
+    <title>Project Terra Nova</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <!-- Librería de TON Connect UI -->
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
 </head>
 <body>
+    <!-- Contenedor principal donde vivirá toda la aplicación -->
     <div id="game-container">
         <div id="loading-screen">
             <div class="spinner"></div>
-            <p>Estableciendo Enlace Hiperlumínico...</p>
+            <p>Sincronizando Esfuerzos Globales...</p>
         </div>
     </div>
-    <script src="script.js"></script>
+
+    <!-- El script se carga al final para un rendimiento óptimo -->
+    <script src="script.js" defer></script>
 </body>
 </html>
