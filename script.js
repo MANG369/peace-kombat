@@ -1,5 +1,5 @@
 /**
- * Galactic Diplomacy - v3.0 Canónica
+ * Galactic Diplomacy - v3.1 Canónica
  * Código unificado, corregido y refactorizado.
  */
 class GameEngine {
@@ -33,7 +33,7 @@ class GameEngine {
         this.tonConnectUI.onStatusChange(wallet => {
             this.state.wallet.connected = !!wallet;
             this.state.wallet.address = wallet ? TonConnectSDK.toUserFriendlyAddress(wallet.account.address) : null;
-            this.renderHeader(); // Re-renderiza solo el header al cambiar la billetera
+            this.renderHeader();
         });
     }
 
@@ -69,7 +69,7 @@ class GameEngine {
                 break;
             case 'purchase-upgrade':
                 this.purchaseUpgrade(payload);
-                this.renderMainContent(); // Re-renderiza la vista para reflejar el cambio
+                this.renderMainContent();
                 break;
             case 'switch-view':
                 this.switchView(payload);
@@ -83,8 +83,6 @@ class GameEngine {
         this.state.totalTaps++;
         this.state.totalInfluenceGenerated += this.state.influencePerTap;
         this.showFloatingNumber(this.state.influencePerTap);
-
-        // Actualización optimizada solo del contador, sin re-renderizar todo
         const influenceDisplay = document.getElementById('total-influence-value');
         if (influenceDisplay) influenceDisplay.textContent = this.formatNumber(this.state.totalInfluence);
     }
@@ -103,7 +101,11 @@ class GameEngine {
         if (!id) return;
         const upgradeInfo = this.config.upgrades[id];
         const level = this.state.upgrades[id] || 0;
-        const cost = this.calculateCost(upgradeInfo.baseInfluence, level);
+        
+        // === ¡ERROR CORREGIDO AQUÍ! ===
+        // Usamos `upgradeInfo.baseCost` en lugar de `baseInfluence` para el cálculo.
+        const cost = this.calculateCost(upgradeInfo.baseCost, level);
+
         if (this.state.totalInfluence >= cost) {
             this.state.totalInfluence -= cost;
             this.state.upgrades[id] = level + 1;
@@ -115,7 +117,7 @@ class GameEngine {
         if (view && this.state.activeView !== view) {
             this.state.activeView = view;
             this.renderMainContent();
-            this.renderNav(); // Actualiza el estado activo del nav
+            this.renderNav();
         }
     }
 
@@ -157,12 +159,12 @@ class GameEngine {
         container.innerHTML = this.config.navItems.map(item => `<button class="nav-button ${this.state.activeView === item.id ? 'active' : ''}" data-action="switch-view" data-payload="${item.id}"><span class="icon">${item.icon}</span> <span>${item.name}</span></button>`).join('');
     }
 
-    getTapperViewHTML() { return `<main class="tapper-section"><div class="passive-income-display"><span class="label">Influencia / Hora</span><div class="value"><span class="icon">✨</span><span>${this.formatNumber(this.state.influencePerHour)}</span></div></div><div class="total-influence-display"><span id="total-influence-value">${this.formatNumber(this.state.totalInfluence)}</span></div><div id="tapper-zone" data-action="handle-tap"><div id="galaxy-container"><span id="galaxy-icon">💫</span></div></div></main>`; }
-    getUpgradesViewHTML() { const cardsHTML = Object.keys(this.config.upgrades).map(id => { const up = this.config.upgrades[id], lvl = this.state.upgrades[id] || 0, cost = this.calculateCost(up.baseInfluence, lvl); return `<div class="upgrade-card ${this.state.totalInfluence >= cost ? 'can-afford' : ''}" data-action="purchase-upgrade" data-payload="${id}"><span class="upgrade-icon">${up.icon}</span><div class="upgrade-info"><h4>${up.name}</h4><p>+${up.baseInfluence} Influencia/Hora</p></div><div class="upgrade-details"><span class="upgrade-level">Nivel ${lvl}</span><div class="upgrade-cost"><span class="icon">💠</span><span>${this.formatNumber(cost)}</span></div></div></div>`; }).join(''); return `<section class="game-view"><h2>🛰️ Proyectos Galácticos 🛰️</h2><div id="upgrades-list">${cardsHTML}</div></section>`; }
+    getTapperViewHTML = () => `<main class="tapper-section"><div class="passive-income-display"><span class="label">Influencia / Hora</span><div class="value"><span class="icon">✨</span><span>${this.formatNumber(this.state.influencePerHour)}</span></div></div><div class="total-influence-display"><span id="total-influence-value">${this.formatNumber(this.state.totalInfluence)}</span></div><div id="tapper-zone" data-action="handle-tap"><div id="galaxy-container"><span id="galaxy-icon">💫</span></div></div></main>`;
+    getUpgradesViewHTML() { const cardsHTML = Object.keys(this.config.upgrades).map(id => { const up = this.config.upgrades[id], lvl = this.state.upgrades[id] || 0, cost = this.calculateCost(up.baseCost, lvl); return `<div class="upgrade-card ${this.state.totalInfluence >= cost ? 'can-afford' : ''}" data-action="purchase-upgrade" data-payload="${id}"><span class="upgrade-icon">${up.icon}</span><div class="upgrade-info"><h4>${up.name}</h4><p>+${up.baseInfluence} Influencia/Hora</p></div><div class="upgrade-details"><span class="upgrade-level">Nivel ${lvl}</span><div class="upgrade-cost"><span class="icon">💠</span><span>${this.formatNumber(cost)}</span></div></div></div>`; }).join(''); return `<section class="game-view"><h2>🛰️ Proyectos Galácticos 🛰️</h2><div id="upgrades-list">${cardsHTML}</div></section>`; }
     getStatsViewHTML() { const days = Math.max(1, Math.floor((new Date() - new Date(this.state.startDate)) / 864e5)); const stats = [{ i: '👆', t: 'Interacciones Totales', v: this.formatNumber(this.state.totalTaps) }, { i: '✨', t: 'Influencia Generada', v: this.formatNumber(this.state.totalInfluenceGenerated) }, { i: '🗓️', t: 'Ciclos Galácticos', v: days }]; return `<section class="game-view"><h2>📈 Registros de la Flota 📈</h2><div class="stats-container">${stats.map(s => `<div class="stat-card"><h3><span class="icon">${s.i}</span> ${s.t}</h3><p>${s.v}</p></div>`).join('')}</div></section>`; }
 
     // --- 5. UTILIDADES Y CÁLCULOS ---
-    calculateCost = (baseCost, level) => Math.floor(baseCost * Math.pow(1.18, level)); // Aumenté un poco el factor de coste
+    calculateCost = (baseCost, level) => Math.floor(baseCost * Math.pow(1.18, level));
     recalculateInfluencePerHour() { this.state.influencePerHour = Object.keys(this.state.upgrades).reduce((t, id) => t + ((this.state.upgrades[id] || 0) * this.config.upgrades[id].baseInfluence), 0); }
     formatNumber(n = 0) { if (n < 1e3) return n.toFixed(0); const s = ["", "K", "M", "B", "T"], i = Math.floor(Math.log10(n) / 3); return `${(n / 1e3 ** i).toFixed(2).replace(/\.00$|\.0$/, "")}${s[i]}`; }
     showFloatingNumber(v) { const t = document.getElementById("tapper-zone"); if (!t) return; const e = document.createElement("div"); e.className = "floating-number"; e.textContent = `+${this.formatNumber(v)}`; t.appendChild(e); setTimeout(() => e.remove(), 1500); }
@@ -170,7 +172,7 @@ class GameEngine {
     // --- 6. PERSISTENCIA DE DATOS ---
     saveGame() {
         this.state.lastSaved = new Date().toISOString();
-        try { localStorage.setItem('galacticDiplomacySave_v1', JSON.stringify(this.state)); } catch (e) { console.error("Error al guardar:", e); }
+        try { localStorage.setItem('galacticDiplomacySave_v1', JSON.stringify(this.state)); } catch (e) { console.error("Error al guardar la partida:", e); }
     }
     loadGame() {
         try {
@@ -181,13 +183,12 @@ class GameEngine {
             const offlineSeconds = Math.max(0, (new Date().getTime() - new Date(lastSaved).getTime()) / 1000);
             const offlineInfluence = ((loadedState.influencePerHour || 0) / 3600) * offlineSeconds;
             
-            // Usamos || 0 para evitar errores si el estado guardado es antiguo o corrupto
             loadedState.totalInfluence = (loadedState.totalInfluence || 0) + offlineInfluence;
             loadedState.totalInfluenceGenerated = (loadedState.totalInfluenceGenerated || 0) + offlineInfluence;
             
             this.state = { ...this.getInitialState(), ...loadedState };
         } catch (e) {
-            console.error("Error al cargar partida, empezando de nuevo.", e);
+            console.error("Error al cargar partida guardada. Empezando de nuevo.", e);
             localStorage.removeItem('galacticDiplomacySave_v1');
         }
         this.recalculateInfluencePerHour();
